@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Galéria - Krisztina & András</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600;700&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="page-container">
+        <a href="index.html" class="back-link">← Vissza</a>
+        
+        <div class="content">
+            <h1>Fotógaléria</h1>
+            
+            <div id="loadingSpinner" class="loading-spinner">
+                <div class="spinner"></div>
+                <p>Betöltés...</p>
+            </div>
+            
+            <div id="gallery" class="gallery-grid"></div>
+            
+            <div id="emptyMessage" class="empty-message" style="display: none;">
+                <p>Még nincsenek feltöltött fotók</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="lightbox" class="lightbox" style="display: none;">
+        <div class="lightbox-content">
+            <span class="lightbox-close">&times;</span>
+            <button id="prevBtn" class="lightbox-nav lightbox-prev">&lt;</button>
+            <button id="nextBtn" class="lightbox-nav lightbox-next">&gt;</button>
+            <img id="lightboxImage" src="" alt="">
+            <video id="lightboxVideo" style="display: none;" controls playsinline></video>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        const gallery = document.getElementById('gallery');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const emptyMessage = document.getElementById('emptyMessage');
+        const lightbox = document.getElementById('lightbox');
+        const lightboxImage = document.getElementById('lightboxImage');
+        const lightboxVideo = document.getElementById('lightboxVideo');
+        const lightboxClose = document.querySelector('.lightbox-close');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+
+        let currentIndex = 0;
+        let allFiles = [];  // GLOBÁLIS - nem let-el a loadGallery-ben!
+        let touchStartX = 0;
+
+        function getR2Url(fileName) {
+            return `${CONFIG.WORKER_URL}/download/${encodeURIComponent(fileName)}`;
+        }
+
+        function getFileType(fileName) {
+            const ext = fileName.split('.').pop().toLowerCase();
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic'].includes(ext)) return 'image';
+            if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) return 'video';
+            return 'unknown';
+        }
+
+        async function loadGallery() {
+            try {
+                const response = await fetch(`${CONFIG.WORKER_URL}/files`);
+                const data = await response.json();
+                
+                // Globális allFiles feltöltése (worker már feltöltési sorrendben küldi)
+                allFiles = data;
+
+                loadingSpinner.style.display = 'none';
+                
+                if (allFiles.length === 0) {
+                    emptyMessage.style.display = 'block';
+                    return;
+                }
+                
+                allFiles.forEach((file, index) => {
+                    const item = createGalleryItem(file, index);
+                    gallery.appendChild(item);
+                });
+            } catch (error) {
+                console.error('Failed to load gallery:', error);
+                loadingSpinner.style.display = 'none';
+                emptyMessage.style.display = 'block';
+            }
+        }
+
+        function createGalleryItem(file, index) {
+            const item = document.createElement('div');
+            item.className = 'gallery-item';
+            
+            const fileType = getFileType(file.name);
+            const fileUrl = getR2Url(file.name);
+            
+            if (fileType === 'video') {
+                const video = document.createElement('video');
+                video.src = fileUrl;
+                video.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+                video.controls = false;
+                video.playsInline = true;
+                video.preload = 'metadata';
+                item.appendChild(video);
+                item.addEventListener('click', () => openLightbox(index));
+            } else if (fileType === 'image') {
+                const img = document.createElement('img');
+                img.src = fileUrl;
+                img.alt = file.name;
+                img.loading = 'lazy';
+                img.style.cssText = 'width:100%;height:100%;object-fit:cover;';
+                item.appendChild(img);
+                item.addEventListener('click', () => openLightbox(index));
+            }
+            
+            return item;
+        }
+
+        function openLightbox(index) {
+            currentIndex = index;
+            const file = allFiles[index];
+            const fileUrl = getR2Url(file.name);
+            const fileType = getFileType(file.name);
+            
+            lightbox.style.display = 'flex';
+            
+            if (fileType === 'video') {
+                lightboxImage.style.display = 'none';
+                lightboxVideo.style.display = 'block';
+                lightboxVideo.src = fileUrl;
+            } else {
+                lightboxVideo.pause && lightboxVideo.pause();
+                lightboxVideo.style.display = 'none';
+                lightboxImage.style.display = 'block';
+                lightboxImage.src = fileUrl;
+            }
+            
+            updateNavButtons();
+        }
+
+        function updateNavButtons() {
+            const isMobile = window.innerWidth <= 768;
+            prevBtn.style.display = (!isMobile && currentIndex > 0) ? 'flex' : 'none';
+            nextBtn.style.display = (!isMobile && currentIndex < allFiles.length - 1) ? 'flex' : 'none';
+        }
+
+        function showPrevious() {
+            if (currentIndex > 0) openLightbox(currentIndex - 1);
+        }
+
+        function showNext() {
+            if (currentIndex < allFiles.length - 1) openLightbox(currentIndex + 1);
+        }
+
+        function closeLightbox() {
+            lightbox.style.display = 'none';
+            lightboxVideo.pause && lightboxVideo.pause();
+            lightboxVideo.src = '';
+            lightboxImage.src = '';
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (lightbox.style.display === 'flex') {
+                if (e.key === 'ArrowLeft') showPrevious();
+                if (e.key === 'ArrowRight') showNext();
+                if (e.key === 'Escape') closeLightbox();
+            }
+        });
+
+        lightboxClose.addEventListener('click', closeLightbox);
+        prevBtn.addEventListener('click', showPrevious);
+        nextBtn.addEventListener('click', showNext);
+
+        lightbox.addEventListener('click', (e) => {
+            if (e.target === lightbox) closeLightbox();
+        });
+
+        lightbox.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].clientX;
+        }, { passive: true });
+
+        lightbox.addEventListener('touchend', (e) => {
+            const diff = touchStartX - e.changedTouches[0].clientX;
+            if (Math.abs(diff) > 50) {
+                diff > 0 ? showNext() : showPrevious();
+            }
+        }, { passive: true });
+
+        loadGallery();
+    </script>
+</body>
+</html>

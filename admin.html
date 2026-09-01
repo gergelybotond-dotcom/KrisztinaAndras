@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Krisztina & András</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;600;700&family=Montserrat:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="page-container">
+        <!-- Vissza navigáció -->
+        <a href="index.html" class="back-link">← Vissza</a>
+        
+        <div class="content">
+            <!-- Login panel -->
+            <div id="loginPanel" class="auth-panel">
+                <h1>Admin Bejelentkezés</h1>
+                <div class="form-group">
+                    <input type="password" id="passwordInput" placeholder="Adja meg a jelszót" class="form-input">
+                    <button id="loginBtn" class="button button-primary">Bejelentkezés</button>
+                </div>
+                <div id="loginError" class="message message-error" style="display: none;">
+                    Hibás jelszó
+                </div>
+            </div>
+            
+            <!-- Admin panel -->
+            <div id="adminPanel" style="display: none;">
+                <h1>Feltöltött Fájlok</h1>
+                <p class="admin-info">Admin panel - csak a jelszóval elérhető</p>
+                
+                <!-- Loading spinner -->
+                <div id="loadingSpinner" class="loading-spinner">
+                    <div class="spinner"></div>
+                    <p>Betöltés...</p>
+                </div>
+                
+                <!-- Fájlok listája -->
+                <div id="filesList" class="files-list">
+                    <!-- A fájlok JavaScript-ből kerülnek be -->
+                </div>
+                
+                <!-- Üres lista üzenet -->
+                <div id="emptyMessage" class="empty-message" style="display: none;">
+                    <p>Nincsenek feltöltött fájlok</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script>
+        const loginPanel = document.getElementById('loginPanel');
+        const adminPanel = document.getElementById('adminPanel');
+        const passwordInput = document.getElementById('passwordInput');
+        const loginBtn = document.getElementById('loginBtn');
+        const loginError = document.getElementById('loginError');
+        const filesList = document.getElementById('filesList');
+        const loadingSpinner = document.getElementById('loadingSpinner');
+        const emptyMessage = document.getElementById('emptyMessage');
+
+        // Login kezelés
+        loginBtn.addEventListener('click', async () => {
+            const password = passwordInput.value;
+            
+            // SHA-256 hash létrehozása
+            const hash = await sha256(password);
+            
+            if (hash === CONFIG.ADMIN_PASSWORD_HASH) {
+                // Sikeres login
+                loginPanel.style.display = 'none';
+                adminPanel.style.display = 'block';
+                loadFiles();
+            } else {
+                loginError.style.display = 'block';
+                passwordInput.value = '';
+            }
+        });
+
+        // Enter gomb kezelés
+        passwordInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                loginBtn.click();
+            }
+        });
+
+        // SHA-256 hash függvény
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex;
+        }
+
+        // Fájlok betöltése
+        async function loadFiles() {
+            try {
+                const response = await fetch(`${CONFIG.WORKER_URL}/files`);
+                const files = await response.json();
+                
+                loadingSpinner.style.display = 'none';
+                
+                if (files.length === 0) {
+                    emptyMessage.style.display = 'block';
+                    return;
+                }
+                
+                // Fájlok megjelenítése
+                files.forEach(file => {
+                    const item = createFileItem(file);
+                    filesList.appendChild(item);
+                });
+            } catch (error) {
+                console.error('Failed to load files:', error);
+                loadingSpinner.style.display = 'none';
+                emptyMessage.style.display = 'block';
+            }
+        }
+
+        // R2 URL генератор
+        function getR2Url(fileName) {
+            return `${CONFIG.WORKER_URL}/download/${encodeURIComponent(fileName)}`;
+        }
+
+        // Fájl típus meghatározása
+        function getFileType(fileName) {
+            const ext = fileName.split('.').pop().toLowerCase();
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'image';
+            if (['mp4', 'webm', 'mov', 'avi'].includes(ext)) return 'video';
+            return 'unknown';
+        }
+
+        // Fájl elem létrehozása
+        function createFileItem(file) {
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            
+            const fileType = getFileType(file.name);
+            const fileUrl = getR2Url(file.name);
+            const isImage = fileType === 'image';
+            
+            // Előnézet (kép vagy videó)
+            let preview;
+            if (isImage) {
+                preview = document.createElement('img');
+                preview.src = fileUrl;
+                preview.alt = file.name;
+                preview.className = 'file-preview';
+                preview.style.cursor = 'pointer';
+                preview.addEventListener('click', () => openImagePreview(fileUrl, file.name));
+            } else if (fileType === 'video') {
+                preview = document.createElement('video');
+                preview.src = fileUrl;
+                preview.className = 'file-preview';
+                preview.style.cursor = 'pointer';
+                preview.addEventListener('click', () => openVideoPreview(fileUrl, file.name));
+            } else {
+                preview = document.createElement('div');
+                preview.className = 'file-preview';
+                preview.textContent = '📄';
+                preview.style.display = 'flex';
+                preview.style.alignItems = 'center';
+                preview.style.justifyContent = 'center';
+                preview.style.fontSize = '2rem';
+                preview.style.backgroundColor = '#f0f0f0';
+            }
+            
+            // Fájl info
+            const info = document.createElement('div');
+            info.className = 'file-info';
+            
+            const nameEl = document.createElement('p');
+            nameEl.className = 'file-name';
+            nameEl.textContent = file.name;
+            info.appendChild(nameEl);
+            
+            const sizeEl = document.createElement('p');
+            sizeEl.style.fontSize = '0.85rem';
+            sizeEl.style.color = '#999';
+            sizeEl.textContent = (file.size / 1024 / 1024).toFixed(2) + ' MB';
+            info.appendChild(sizeEl);
+            
+            // Gombok
+            const buttonsContainer = document.createElement('div');
+            buttonsContainer.className = 'file-actions';
+            
+            // Letöltés gomb
+            const downloadBtn = document.createElement('a');
+            downloadBtn.href = fileUrl;
+            downloadBtn.className = 'button button-small';
+            downloadBtn.textContent = '⬇️ Letöltés';
+            downloadBtn.target = '_blank';
+            downloadBtn.download = file.name;
+            buttonsContainer.appendChild(downloadBtn);
+            
+            // Törlés gomb
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'button button-small button-danger';
+            deleteBtn.textContent = '🗑️ Törlés';
+            deleteBtn.addEventListener('click', () => deleteFile(file.name, item));
+            buttonsContainer.appendChild(deleteBtn);
+            
+            info.appendChild(buttonsContainer);
+            
+            item.appendChild(preview);
+            item.appendChild(info);
+            
+            return item;
+        }
+
+        // Image preview modal
+        function openImagePreview(fileUrl, fileName) {
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;z-index:1000;';
+            modal.innerHTML = `
+                <div style="position:relative;max-width:90vw;max-height:90vh;">
+                    <img src="${fileUrl}" alt="${fileName}" style="max-width:100%;max-height:100%;border-radius:12px;">
+                    <button onclick="this.parentElement.parentElement.remove()" style="position:absolute;top:10px;right:10px;background:#C9A84C;border:none;color:white;width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:24px;">&times;</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+        }
+
+        // Video preview modal
+        function openVideoPreview(fileUrl, fileName) {
+            const modal = document.createElement('div');
+            modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;z-index:1000;';
+            modal.innerHTML = `
+                <div style="position:relative;max-width:90vw;max-height:90vh;">
+                    <video src="${fileUrl}" style="max-width:100%;max-height:100%;border-radius:12px;" controls autoplay></video>
+                    <button onclick="this.parentElement.parentElement.remove()" style="position:absolute;top:10px;right:10px;background:#C9A84C;border:none;color:white;width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:24px;">&times;</button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+        }
+
+        // Fájl törlése
+        async function deleteFile(fileName, element) {
+            if (!confirm('Biztos, hogy törlöd ezt a fájlt?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${CONFIG.WORKER_URL}/file/${fileName}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${CONFIG.ADMIN_PASSWORD_HASH}`
+                    }
+                });
+                
+                if (response.ok) {
+                    element.remove();
+                } else {
+                    alert('Hiba a fájl törlése során');
+                }
+            } catch (error) {
+                console.error('Delete error:', error);
+                alert('Hiba a fájl törlése során');
+            }
+        }
+    </script>
+</body>
+</html>
