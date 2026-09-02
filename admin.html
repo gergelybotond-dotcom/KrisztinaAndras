@@ -249,7 +249,7 @@
             }
             
             try {
-                const response = await fetch(`${CONFIG.WORKER_URL}/file/${fileName}`, {
+                const response = await fetch(`${CONFIG.WORKER_URL}/file/${encodeURIComponent(fileName)}`, {
                     method: 'DELETE',
                     headers: {
                         'Authorization': `Bearer ${CONFIG.ADMIN_PASSWORD_HASH}`
